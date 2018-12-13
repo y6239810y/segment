@@ -1,31 +1,37 @@
 from tools import *
 from conv_lstm import SegLSTMCell
 import tensorflow.contrib.slim as slim
-import os
+import os,shutil
 
 
 class LstmSegNet:
     def __init__(self, layers,
-                 layers_kernels, 
+                 layers_kernels,
                  threshold=0.5,
                  save_path='.',
-                 learn_rate=0.1,
+                 learning_rate=0.1,
                  decay_steps=300,
                  decay_rate=0.99,
                  batch_size=12,
                  width=512,
-                 height=512):
+                 height=512,
+                 resume=True,
+                 loss_func="softmax"):
 
         self.x = tf.placeholder(tf.float32, name="input_data")  # 输入数据
         self.y = tf.placeholder(tf.int32, name="input_label")  # 实际标签
+        self.batch_size = batch_size
+        self.width = width
+        self.height = height
 
         self.input = tf.reshape(self.x, [batch_size, width, height, 1])
-
         self.is_train = True  # 训练状态
         self.train_times = 0  # 已训练次数, 会把这个记录到tensorboard
         self.test_times = 0  # 已经测试次数, 会把这个记录到tensorboard
         self.global_step = tf.Variable(0, trainable=False)
-        self.learning_rate = learn_rate
+        self.learning_rate = learning_rate
+        self.threshold = threshold
+        self.resume = resume
         self.sess = tf.Session()
         self.net = {}
         self.save_path = save_path
@@ -61,7 +67,7 @@ class LstmSegNet:
                 num = value['num']
                 filter = value['filter']
                 stride = value['stride']
-                current = self.ResBlock(current, num, filter, stride, name)
+                current = self._res_block(current, num, filter, stride, name)
                 self.net[name] = current
 
 
@@ -82,7 +88,7 @@ class LstmSegNet:
 
             elif name.split('_')[0] == 'ATROUS':
                 filter = value['filter']
-                current = self.atrous_spatial_pyramid_pooling(inputs=current, scope=name, depth=filter)
+                current = self._atrous_spatial_pyramid_pooling(inputs=current, scope=name, depth=filter)
                 self.net[name] = current
 
             elif name.split('_')[0] == 'ADD':  # 相加融合模块
@@ -121,15 +127,49 @@ class LstmSegNet:
 
         with tf.variable_scope('train'):  # 训练部分
 
-            self.class_weights = tf.placeholder(tf.float32, name='class_weights')
+            if loss_func == 'cross_entropy':
+                self.class_weights = tf.placeholder(tf.float32, name='class_weights')
 
-            self.weight_map = tf.reduce_sum(tf.multiply(tf.cast(self.y, tf.float32), self.class_weights), 3)  # 权值
+                self.weight_map = tf.reduce_sum(tf.multiply(tf.cast(self.y, tf.float32), self.class_weights), 3)  # 权值
 
-            current = tf.squeeze(current)
+                current = tf.squeeze(current)
 
-            self.softmax_cost = tf.nn.softmax_cross_entropy_with_logits_v2(logits=current, labels=self.y)
+                self.softmax_cost = tf.nn.softmax_cross_entropy_with_logits_v2(logits=current, labels=self.y)
 
-            self.loss = tf.reduce_mean(self.softmax_cost * self.weight_map)  # 损失函数权值调整
+                self.loss = tf.reduce_mean(self.softmax_cost * self.weight_map)  # 损失函数权值调整
+
+            elif loss_func == 'dice':
+                current = tf.squeeze(current)
+                current = tf.nn.softmax(current,axis=3)
+
+                self.obj_map, self.bg_map = tf.split(current, 2, 3)
+                self.label_obj_map, self.label_bg_map = tf.split(self.y, 2, 3)
+
+                self.obj_map = tf.squeeze(self.obj_map)
+
+                self.loss = 1 - dice_coe(output=self.obj_map,
+                                              target=tf.squeeze(tf.cast(self.label_obj_map, tf.float32)))
+
+            else:
+                self.obj_map, self.bg_map = tf.split(current, 2, 3)
+                self.label_obj_map, self.label_bg_map = tf.split(self.y, 2, 3)
+
+                self.obj_map = tf.squeeze(self.obj_map)
+                self.obj_map = tf.nn.sigmoid(self.obj_map)
+
+                self.dice_cost = 1 - dice_coe(output=self.obj_map,
+                                              target=tf.squeeze(tf.cast(self.label_obj_map, tf.float32)))
+
+                self.class_weights = tf.placeholder(tf.float32, name='class_weights')
+
+                self.weight_map = tf.reduce_sum(tf.multiply(tf.cast(self.y, tf.float32), self.class_weights), 3)  # 权值
+
+                current = tf.squeeze(current)
+
+                self.softmax_cost = tf.nn.softmax_cross_entropy_with_logits_v2(logits=current, labels=self.y)
+
+                self.loss = 0.8 * tf.reduce_mean(self.softmax_cost * self.weight_map) + 0.2 * tf.reduce_mean(
+                    self.dice_cost)  # 损失函数权
 
             self.lr = tf.train.exponential_decay(self.learning_rate,
                                                  self.global_step,
@@ -139,9 +179,10 @@ class LstmSegNet:
 
             self.train_op = tf.train.AdadeltaOptimizer(
                 self.lr).minimize(self.loss, global_step=self.global_step)
+
             self.loss_summary = tf.summary.scalar('loss', self.loss)
 
-        self.liver_result, self.liver_correct_prediction = self.GetResult()
+        self.liver_result, self.liver_correct_prediction = self._get_result()
 
         with tf.variable_scope("accurary"):  # 计算准确度并保存到tensorboard
             self.liver_IOU = tf.placeholder(tf.float32, name="liver_IOU")
@@ -152,59 +193,57 @@ class LstmSegNet:
 
             self.saver = tf.train.Saver()
             self.sess.run(tf.global_variables_initializer())
-            self.Reload()
+            self._reload()
 
         self.merged = tf.summary.merge([self.loss_summary])
 
         self.train_writer = tf.summary.FileWriter(os.path.join(self.save_path, "tensorboard/train"), self.sess.graph)
         self.test_writer = tf.summary.FileWriter(os.path.join(self.save_path, "tensorboard/test"), self.sess.graph)
 
-    def GetResult(self):  # 将网络单次执行结果 计算出准确度
+    def _get_result(self):  # 将网络单次执行结果 计算出准确度
         with tf.variable_scope("GetResult"):
-            x = tf.squeeze(self.net[self.layers[-1]])
-            out_result = tf.cast(tf.argmax(x, 3), tf.float32)
-            constant = tf.cast(tf.equal(out_result, out_result), tf.float32)
+            x = tf.squeeze(self.net['CONV_LAST'])
 
-            liver_result = tf.cast(tf.less(out_result, constant), tf.float32)
+            liver_result, liver_bg = tf.split(x, [1, 1], axis=3)
 
             label_liver, label_bg = tf.split(self.y, [1, 1], axis=3)  # 分离背景和前景
 
-            label_liver = tf.cast(tf.squeeze(label_liver), tf.float32)
+            liver_result = tf.squeeze(liver_result)
 
-            liver_intersection = label_liver * liver_result
+            label_liver = tf.squeeze(label_liver)
 
-            liver_union = tf.cast(tf.greater_equal((label_liver + liver_result), constant), tf.float32)
+            # result_dice = dice_hard_coe(liver_result,label_liver,threshold=self.threshold)
 
-            liver_correct_prediction = tf.reduce_mean(liver_intersection) / tf.reduce_mean(liver_union)  # 计算交并比
+            result_iou = iou_coe(liver_result,label_liver,threshold=self.threshold)
 
-        return liver_result, liver_correct_prediction
+        return liver_result, result_iou
 
-    def Reload(self):  # 重新载入模型
+    def _reload(self):  # 重新载入模型
         if os.path.isdir(os.path.join(self.save_path, "model")):
             pass
         else:
-            os.mkdir(os.path.join(self.save_path, "model"))
+            os.makedirs(os.path.join(self.save_path, "model"))
 
         if os.path.isdir(os.path.join(self.save_path, "model_best")):
             pass
         else:
-            os.mkdir(os.path.join(self.save_path, "model_best"))
+            os.makedirs(os.path.join(self.save_path, "model_best"))
 
         ckpt = tf.train.get_checkpoint_state(os.path.join(self.save_path, "model"))
-        if ckpt and ckpt.model_checkpoint_path:
+        if ckpt and ckpt.model_checkpoint_path and self.resume:
             self.saver.restore(self.sess, ckpt.model_checkpoint_path)
             print("Model restored...")
         else:
             print("Model creating...")
 
-    def Store(self, isBest):  # 保存模型
+    def _store(self, isBest):  # 保存模型
         if isBest:
             self.saver.save(self.sess, os.path.join(self.save_path, "model/model.ckpt"))
             self.saver.save(self.sess, os.path.join(self.save_path, "model_best/model.ckpt"))
         else:
             self.saver.save(self.sess, os.path.join(self.save_path, "model/model.ckpt"))
 
-    def DenseBlock(self, input, nums, name):  # DenseNet模块
+    def _dense_block(self, input, nums, name):  # DenseNet模块
         self.net[name] = []
         self.net[name].append(input)
         with tf.variable_scope(name):
@@ -236,7 +275,7 @@ class LstmSegNet:
         self.net[name].append(output)
         return output
 
-    def ResBlock(self, input, nums, filter, stride, name):  # ResNet模块实现方法
+    def _res_block(self, input, nums, filter, stride, name):  # ResNet模块实现方法
         add_layer = Conv2d(input=input, filter=filter, strides=stride, kernel=[1, 1], layer_name='ADD_CONV')
         output = input
         with tf.variable_scope(name):
@@ -260,7 +299,7 @@ class LstmSegNet:
         self.net[name] = output
         return output
 
-    def atrous_spatial_pyramid_pooling(self, inputs, scope, depth=512, reuse=None):
+    def _atrous_spatial_pyramid_pooling(self, inputs, scope, depth=512, reuse=None):
 
         with tf.variable_scope(scope, reuse=reuse):
             feature_map_size = tf.shape(inputs)
@@ -284,10 +323,10 @@ class LstmSegNet:
 
             return net
 
-    def RunAccurary(self, IOU):  # 将网络外部计算出的整套结果准确度参数，存入tensorboard
+    def _run_accurary(self, IOU):  # 将网络外部计算出的整套结果准确度参数，存入tensorboard
         self.merged_recall = tf.summary.merge([self.liver_iou])
         result, step = self.sess.run((self.merged_recall, self.global_step),
-                                     feed_dict={self.liver_IOU: IOU,
+                                     feed_dict={self.liver_IOU: IOU
                                                 })
         if (self.is_train):  # 判断是不是在训练，如果是训练 存入train tensorboard 否则存入test tensorboard
             self.train_writer.add_summary(result, self.train_times)
@@ -297,13 +336,13 @@ class LstmSegNet:
             self.test_writer.add_summary(result, self.test_times)
             self.test_times = self.test_times + 1
 
-    def Train(self, inputs, labels, weights):  # 开始执行训练的操作函数
+    def _train(self, inputs, labels, weights):  # 开始执行训练的操作函数
 
         self.is_train = True
         if os.path.isdir(os.path.join(self.save_path, "tensorboard")):
             pass
         else:
-            os.mkdir(os.path.join(self.save_path, "tensorboard"))
+            os.makedirs(os.path.join(self.save_path, "tensorboard"))
 
         _, loss, liver, liver_iou, learn_rate, result, step = self.sess.run((
             self.train_op, self.loss, self.liver_result, self.liver_correct_prediction,
@@ -313,15 +352,15 @@ class LstmSegNet:
         self.train_writer.add_summary(result, step)
         return loss, liver, liver_iou, learn_rate, step
 
-    def Test(self, inputs, labels, weights):  # 开始执行测试的操作函数
+    def _val(self, inputs, labels, weights):  # 开始执行测试的操作函数
         self.is_train = False
         if os.path.isdir(os.path.join(self.save_path, "tensorboard")):
             pass
         else:
-            os.mkdir(os.path.join(self.save_path, "tensorboard"))
+            os.makedirs(os.path.join(self.save_path, "tensorboard"))
 
-        loss, liver, liver_recall, learn_rate, step = self.sess.run(
+        loss, liver, liver_iou, learn_rate, step = self.sess.run(
             (self.loss, self.liver_result, self.liver_correct_prediction, self.lr, self.global_step),
             feed_dict={self.x: inputs, self.y: labels, self.class_weights: weights})
 
-        return loss, liver, liver_recall, learn_rate, step
+        return loss, liver, liver_iou, learn_rate, step
