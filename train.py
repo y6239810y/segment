@@ -1,4 +1,5 @@
 from get_data import *
+from statistics import *
 import numpy as np
 import random,re
 
@@ -9,11 +10,12 @@ def net_train(model, root, weights, times, filter_no_liver = 10):  # 训练执�
     H_SIZE = model.height
     THRESHOLD = model.threshold
 
+    file_list = [file for file in os.listdir(root) if int(re.sub("\D", "", file)) <= 1and "volume" in file]
 
-    file_list = [file for file in os.listdir(root) if int(re.sub("\D", "", file)) <= 130 and "volume" in file]
-    file_list = random.shuffle(file_list)
+    random.shuffle(file_list)
 
     for i, file in enumerate(file_list):
+
         data_array, label_array = read_data(root, file, random.randint(0,4))
 
         out_vtk_liver = np.zeros(data_array.shape)
@@ -32,16 +34,29 @@ def net_train(model, root, weights, times, filter_no_liver = 10):  # 训练执�
                 loss, liver,liver_iou,learn_rate, step = model._train(data, label, weights)
                 out_vtk_liver[c_start:c_end, w_start:w_end, h_start:h_end] = liver
 
-                if (j % 10 == 0):
+                if (j % 1 == 0):
                     print('step ', step, ' liver_percentage ', liver_percentage, 'learning_rate', learn_rate)
                     print(' loss ', loss, ' liver_iou ', liver_iou)
                     print("=================================================================================")
 
-        out_vtk_liver = 1.0*(out_vtk_liver>THRESHOLD)
-        label_array_obj = 1.0*(label_array[:, :, :, 0] > THRESHOLD)
+        over = (i == len(file_list) - 1)
+        ious = []
+        for thr in [0.4,0.5,0.6]:
+            out_vtk_liver_with_thr = 1.0*(out_vtk_liver>thr)
+            label_array_obj = 1.0*(label_array[:, :, :, 0] > thr)
 
-        total_dice = np.sum(2.0 * out_vtk_liver * label_array_obj)/(1.0*np.sum(out_vtk_liver+label_array_obj))
-        total_iou = np.sum(1.0 * out_vtk_liver * label_array_obj)/(1.0*np.sum((out_vtk_liver+label_array_obj)>0))
+            total_iou = np.sum(1.0 * out_vtk_liver_with_thr * label_array_obj)/(1.0*np.sum((out_vtk_liver_with_thr+label_array_obj)>0))
+            ious.append(total_iou)
+
+        add_train(times,model.save_path,file,ious,over)
+
+
+        out_vtk_liver = 1.0 * (out_vtk_liver > THRESHOLD)
+        label_array_obj = 1.0 * (label_array[:, :, :, 0] > THRESHOLD)
+
+        total_dice = np.sum(2.0 * out_vtk_liver * label_array_obj) / (1.0 * np.sum(out_vtk_liver + label_array_obj))
+        total_iou = np.sum(1.0 * out_vtk_liver * label_array_obj) / (
+                    1.0 * np.sum((out_vtk_liver + label_array_obj) > 0))
 
         print(total_dice,total_iou)
         model._run_accurary(total_iou)  # 将整体准确度上传tensorboard

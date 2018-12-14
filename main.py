@@ -5,6 +5,7 @@ from tools import *
 from train import net_train
 from val import net_val
 import argparse
+from statistics import *
 
 def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1")
@@ -96,6 +97,7 @@ if __name__ == '__main__':
 
         {"kernel": [3, 3], "stride": 1, "filter": 2, "BN": True}  # CONV_LAST
     ]
+
     model = LstmSegNet(layers=layers,layers_kernels=layers_kernels,
                        threshold=args.threshold,save_path=args.save_path,learning_rate=args.lr,
                        decay_steps=args.decay_steps,decay_rate=args.decay_rate,batch_size=args.batch_size,
@@ -110,7 +112,10 @@ if __name__ == '__main__':
     model.test_times = 0
 
     weights = args.weights
-
+    init_statistics(save_path=args.save_path,batch_size=args.batch_size,learning_rate=args.lr,decay_rate=args.decay_rate,
+                    decay_steps=args.decay_steps,threshold = args.threshold,width = args.width,height= args.height,
+                    loss_func = args.loss_func,weights=args.weights,filter_no_liver=args.filter_no_liver
+                    )
     for time in range(args.epochs):
         net_train(model=model,root=args.dataset_root,weights=weights,times=time+1)
         avg_liver = net_val(model=model,root=args.dataset_root,weights=weights,times=time+1)

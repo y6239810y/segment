@@ -1,19 +1,19 @@
 from get_data import *
 import numpy as np
 import random,re
+from statistics import *
 
-def net_val(model, root, weights, times):  # 训练执行步骤
+def net_val(model, root, weights, times):  # 执行评估步骤
     avg_liver = []
     C_SIZE = model.batch_size
     W_SIZE = model.width
     H_SIZE = model.height
     THRESHOLD = model.threshold
 
-    file_list = [file for file in os.listdir(root) if int(re.sub("\D", "", file)) > 130 and "volume" in file]
-    file_list = random.shuffle(file_list)
+    file_list = [file for file in os.listdir(root) if int(re.sub("\D", "", file)) <= 2 and "volume" in file]
 
     for i, file in enumerate(file_list):
-        data_array, label_array = read_data(root, file, random.randint(0,4))
+        data_array, label_array = read_data(root, file, 1)
 
         out_vtk_liver = np.zeros(data_array.shape)
 
@@ -25,9 +25,21 @@ def net_val(model, root, weights, times):  # 训练执行步骤
             data = data_array[c_start:c_end, w_start:w_end, h_start:h_end]
             label = label_array[c_start:c_end, w_start:w_end, h_start:h_end]
 
-            loss, liver, liver_iou,learn_rate, step = model.Val(data, label, weights)
+            loss, liver, liver_iou,learn_rate, step = model._val(data, label, weights)
 
             out_vtk_liver[c_start:c_end, w_start:w_end, h_start:h_end] = liver
+
+        over = (i == len(file_list) - 1)
+        ious = []
+        for thr in [0.4, 0.5, 0.6]:
+            out_vtk_liver_with_thr = 1.0 * (out_vtk_liver > thr)
+            label_array_obj = 1.0 * (label_array[:, :, :, 0] > thr)
+
+            total_iou = np.sum(1.0 * out_vtk_liver_with_thr * label_array_obj) / (
+                        1.0 * np.sum((out_vtk_liver_with_thr + label_array_obj) > 0))
+            ious.append(total_iou)
+
+        add_val(times, model.save_path, file, ious, over)
 
 
         out_vtk_liver = 1.0*(out_vtk_liver>THRESHOLD)
@@ -49,3 +61,5 @@ def net_val(model, root, weights, times):  # 训练执行步骤
         avg_liver.append(total_iou)
 
         del out_vtk_liver
+
+    return avg_liver

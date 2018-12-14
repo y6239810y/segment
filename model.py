@@ -203,6 +203,8 @@ class LstmSegNet:
     def _get_result(self):  # 将网络单次执行结果 计算出准确度
         with tf.variable_scope("GetResult"):
             x = tf.squeeze(self.net['CONV_LAST'])
+            
+            x = tf.nn.softmax(x,axis=3)
 
             liver_result, liver_bg = tf.split(x, [1, 1], axis=3)
 
@@ -214,7 +216,7 @@ class LstmSegNet:
 
             # result_dice = dice_hard_coe(liver_result,label_liver,threshold=self.threshold)
 
-            result_iou = iou_coe(liver_result,label_liver,threshold=self.threshold)
+            result_iou = iou_coe(liver_result,tf.cast(label_liver,tf.float32),threshold=self.threshold)
 
         return liver_result, result_iou
 
