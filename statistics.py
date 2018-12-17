@@ -96,7 +96,6 @@ def add_val(epoch_num, save_path, volume_name, ious,over):
 
         if over:
             last_val_avg = statistics['result'][epoch_num - 1]['val_avg']
-            print()
             statistics['result'][epoch_num]['val_add'] = [a - b for a, b in zip(val_avg, last_val_avg)]
             statistics['val_best'] = [a if a>b else b for a,b in zip(statistics['val_best'],val_avg)]
 

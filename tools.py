@@ -6,12 +6,14 @@ import numpy as np
 def Relu(x, name='relu'):
     return tf.nn.relu(x, name=name)
 
+
 def Conv3d(input, filter, kernel, strides=1, layer_name="conv", activation=None):
     with tf.name_scope(layer_name):
         network = tf.layers.conv3d(inputs=input, use_bias=True, filters=filter, activation=activation,
                                    kernel_size=kernel, strides=strides,
                                    padding='SAME')
         return network
+
 
 def Conv2d(input, filter, kernel, strides=1, layer_name="conv", activation=None):
     with tf.name_scope(layer_name):
@@ -20,11 +22,13 @@ def Conv2d(input, filter, kernel, strides=1, layer_name="conv", activation=None)
                                    padding='SAME')
         return network
 
+
 def Depthwise_conv2d(input, filter, strides=1, layer_name="conv"):
     with tf.name_scope(layer_name):
-        network = tf.nn.depthwise_conv2d(input=input, filter=filter, strides=[1,strides, strides, 1],
-                     padding='SAME')
+        network = tf.nn.depthwise_conv2d(input=input, filter=filter, strides=[1, strides, strides, 1],
+                                         padding='SAME')
         return network
+
 
 def Upsample_3d(input, filter, kernel, strides=[2, 2, 2], layer_name="upsample", activation=None):
     with tf.name_scope(layer_name):
@@ -33,12 +37,14 @@ def Upsample_3d(input, filter, kernel, strides=[2, 2, 2], layer_name="upsample",
                                              padding='SAME')
         return network
 
+
 def Upsample_2d(input, filter, kernel, strides=[2, 2], layer_name="upsample", activation=None):
     with tf.name_scope(layer_name):
         network = tf.layers.conv2d_transpose(inputs=input, use_bias=True, filters=filter, activation=activation,
                                              kernel_size=kernel, strides=strides,
                                              padding='SAME')
         return network
+
 
 def Average_pooling_2d(x, pool_size=[2, 2], strides=2, padding='SAME', name='avg_pool'):
     with tf.variable_scope(name):
@@ -138,6 +144,7 @@ def dice_coe(output, target, loss_type='jaccard', axis=(0, 1, 2), smooth=1e-5):
     dice = tf.reduce_mean(dice, name='dice_coe')
     return dice
 
+
 def iou_coe(output, target, threshold=0.5, axis=(0, 1, 2), smooth=1e-5):
     """Non-differentiable Intersection over Union (IoU) for comparing the
     similarity of two batch of data, usually be used for evaluating binary image segmentation.
@@ -172,6 +179,7 @@ def iou_coe(output, target, threshold=0.5, axis=(0, 1, 2), smooth=1e-5):
     batch_iou = (inse + smooth) / (union + smooth)
     iou = tf.reduce_mean(batch_iou, name='iou_coe')
     return iou  # , pre, truth, inse, union
+
 
 def dice_hard_coe(output, target, threshold=0.5, axis=(0, 1, 2), smooth=1e-5):
     """Non-differentiable Sørensen–Dice coefficient for comparing the similarity
@@ -210,3 +218,35 @@ def dice_hard_coe(output, target, threshold=0.5, axis=(0, 1, 2), smooth=1e-5):
     ##
     hard_dice = tf.reduce_mean(hard_dice, name='hard_dice')
     return hard_dice
+
+
+def norm(x, norm_type, is_train, G=32, esp=1e-5, scope='group'):
+    with tf.variable_scope('{}_norm'.format(scope)):
+        if norm_type == 'none':
+            output = x
+        elif norm_type == 'batch':
+            output = tf.contrib.layers.batch_norm(
+                x, center=True, scale=True, decay=0.999,
+                is_training=is_train, updates_collections=None
+            )
+        elif norm_type == 'group':
+            # normalize
+            # tranpose: [bs, h, w, c] to [bs, c, h, w] following the paper
+            x = tf.transpose(x, [0, 3, 1, 2])
+            N, C, H, W = x.get_shape().as_list()
+            G = min(G, C)
+            x = tf.reshape(x, [-1, G, C // G, H, W])
+            mean, var = tf.nn.moments(x, [2, 3, 4], keep_dims=True)
+            x = (x - mean) / tf.sqrt(var + esp)
+            # per channel gamma and beta
+            gamma = tf.Variable(tf.constant(1.0, shape=[C]), dtype=tf.float32, name='gamma')
+            beta = tf.Variable(tf.constant(0.0, shape=[C]), dtype=tf.float32, name='beta')
+            gamma = tf.reshape(gamma, [1, C, 1, 1])
+            beta = tf.reshape(beta, [1, C, 1, 1])
+
+            output = tf.reshape(x, [-1, C, H, W]) * gamma + beta
+            # tranpose: [bs, c, h, w, c] to [bs, h, w, c] following the paper
+            output = tf.transpose(output, [0, 2, 3, 1])
+        else:
+            raise NotImplementedError
+    return output
