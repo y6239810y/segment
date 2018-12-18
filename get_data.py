@@ -3,7 +3,7 @@ import os
 import numpy as np
 
 
-def read_data(path, file, rotate, normalize='gaosi'):  # 获得整套CT数据和标签，并且转换成numpy格式
+def read_data(path, file, rotate, down_sample=1, normalize='gaosi'):  # 获得整套CT数据和标签，并且转换成numpy格式
     image = sitk.ReadImage(os.path.join(path, file))
     print(file, image.GetSpacing())
     dicom_array = sitk.GetArrayFromImage(image)
@@ -43,7 +43,7 @@ def read_data(path, file, rotate, normalize='gaosi'):  # 获得整套CT数据和
     temp = temp > 0
     label_array[:, :, :, 1] = ~temp
 
-    return dicom_array, label_array
+    return dicom_array[::down_sample,::down_sample,::down_sample], label_array[::down_sample,::down_sample,::down_sample]
 
 
 def chop_datas(dicom_array, w_size, h_size, c_size, train):  # 将CT数据切割成设置固定大小的长方体

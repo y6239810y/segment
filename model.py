@@ -150,6 +150,17 @@ class LstmSegNet:
 
                 self.loss = 1 - dice_coe(output=self.obj_map,
                                               target=tf.squeeze(tf.cast(self.label_obj_map, tf.float32)))
+            elif loss_func == 'focal':
+                current = tf.squeeze(current)
+                current = tf.nn.softmax(current, axis=3)
+
+                self.obj_map, self.bg_map = tf.split(current, 2, 3)
+                self.label_obj_map, self.label_bg_map = tf.split(self.y, 2, 3)
+
+                self.obj_map = tf.squeeze(self.obj_map)
+
+                self.loss = focal_loss(logits=self.obj_map,onehot_labels=tf.squeeze(tf.cast(self.label_obj_map, tf.float32)))
+
 
             else:
                 self.obj_map, self.bg_map = tf.split(current, 2, 3)

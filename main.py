@@ -58,10 +58,17 @@ parser.add_argument('--weights', default=[100,10], type=list,
 parser.add_argument('--filter_no_liver', default=10, type=int,
                     help='the probability to filter on_object')
 
+parser.add_argument('--down_sample', default=1, type=int,
+                    help='the probability to filter on_object')
+
 parser.add_argument('--norm_type', default='group', type=str,
                     help='the type of normlization')
 
 args = parser.parse_args()
+
+args.width = args.width//args.down_sample
+
+args.height = args.height//args.down_sample
 
 if __name__ == '__main__':
 
@@ -120,8 +127,8 @@ if __name__ == '__main__':
                     )
     count = 5
     for time in range(args.epochs):
-        net_train(model=model,root=args.dataset_root,weights=weights,times=time+1)
-        avg_liver = net_val(model=model,root=args.dataset_root,weights=weights,times=time+1)
+        net_train(model=model,root=args.dataset_root,weights=weights,times=time+1,down_sample=args.down_sample)
+        avg_liver = net_val(model=model,root=args.dataset_root,weights=weights,times=time+1,down_sample=args.down_sample)
 
         if (np.sum(avg_liver) > np.sum(avg_liver_best)):
             avg_liver_best = avg_liver

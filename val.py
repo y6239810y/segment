@@ -3,7 +3,7 @@ import numpy as np
 import random,re
 from statistics import *
 
-def net_val(model, root, weights, times):  # 执行评估步骤
+def net_val(model, root, weights, times, down_sample):  # 执行评估步骤
     avg_liver = []
     C_SIZE = model.batch_size
     W_SIZE = model.width
@@ -13,7 +13,7 @@ def net_val(model, root, weights, times):  # 执行评估步骤
     file_list = [file for file in os.listdir(root) if int(re.sub("\D", "", file)) > 130 and "volume" in file]
 
     for i, file in enumerate(file_list):
-        data_array, label_array = read_data(root, file, 1)
+        data_array, label_array = read_data(root, file, 1 ,down_sample)
 
         out_vtk_liver = np.zeros(data_array.shape)
 
@@ -53,7 +53,7 @@ def net_val(model, root, weights, times):  # 执行评估步骤
         print("=================================================================================")
         print("=================================================================================")
         print(
-            "time: " + str(times) + "  Dicom: " + str(i + 1) + " total_dice: " + str(total_dice),
+            "time: " + str(times) + "  test: " + str(i + 1) + " total_dice: " + str(total_dice),
             " total_iou: " + str(total_iou),
         )
         print("\n\n\n")

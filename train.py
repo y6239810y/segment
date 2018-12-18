@@ -3,7 +3,7 @@ from statistics import *
 import numpy as np
 import random,re
 
-def net_train(model, root, weights, times, filter_no_liver = 10):  # 训练执行步骤
+def net_train(model, root, weights, times,down_sample, filter_no_liver = 10):  # 训练执行步骤
 
     C_SIZE = model.batch_size
     W_SIZE = model.width
@@ -16,7 +16,7 @@ def net_train(model, root, weights, times, filter_no_liver = 10):  # 训练执�
 
     for i, file in enumerate(file_list):
 
-        data_array, label_array = read_data(root, file, random.randint(0,4))
+        data_array, label_array = read_data(root, file, random.randint(0,4),down_sample=down_sample)
 
         out_vtk_liver = np.zeros(data_array.shape)
 

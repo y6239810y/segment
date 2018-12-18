@@ -1,1 +1,4 @@
 *.sh
+*.idea
+*.hup
+__pycache__

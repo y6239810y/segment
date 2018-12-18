@@ -25,7 +25,7 @@ lower = -200
 expand_slice = 20  # 轴向上向外扩张的slice数量
 size = 48  # 取样的slice数量
 stride = 3  # 取样的步长
-down_scale = 1
+down_scale = 0.5
 slice_thickness = 1
 
 # root = '/mnt/data/dataset/liver/'
@@ -81,7 +81,7 @@ def process_3d():
         print("process chazhi")
 
         ct_array = ndimage.zoom(ct_array, (ct.GetSpacing()[-1] / slice_thickness, down_scale, down_scale), order=3)
-        seg_array = ndimage.zoom(seg_array, (ct.GetSpacing()[-1] / slice_thickness, 1, 1), order=0)
+        seg_array = ndimage.zoom(seg_array, (ct.GetSpacing()[-1] / slice_thickness, down_scale, down_scale), order=0)
 
         # 找到肝脏区域开始和结束的slice，并各向外扩张
         # z = np.any(seg_array, axis=(1, 2))
