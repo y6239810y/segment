@@ -10,7 +10,7 @@ def net_val(model, root, weights, times):  # 执行评估步骤
     H_SIZE = model.height
     THRESHOLD = model.threshold
 
-    file_list = [file for file in os.listdir(root) if int(re.sub("\D", "", file)) <= 2 and "volume" in file]
+    file_list = [file for file in os.listdir(root) if int(re.sub("\D", "", file)) > 130 and "volume" in file]
 
     for i, file in enumerate(file_list):
         data_array, label_array = read_data(root, file, 1)
