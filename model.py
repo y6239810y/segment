@@ -47,10 +47,10 @@ class LstmSegNet:
                     conv_kernel = value['kernel']
                     conv_stride = value['stride']
                     conv_filter = value['filter']
-                    is_bn = value['BN']
-                    if (is_bn):
-                        current = tf.contrib.slim.batch_norm(current, is_training=self.is_train, scope='BN')
-                        current = Relu(current, name='RELU')
+                    norm_type = value['norm']
+                    current = norm(current,norm_type, is_train=self.is_train, scope=norm_type)
+                    current = Relu(current, name='RELU')
+
                     current = Conv2d(input=current, filter=conv_filter, kernel=conv_kernel, strides=conv_stride)
                     self.net[name] = current
 
@@ -67,7 +67,8 @@ class LstmSegNet:
                 num = value['num']
                 filter = value['filter']
                 stride = value['stride']
-                current = self._res_block(current, num, filter, stride, name)
+                norm_type = value['norm']
+                current = self._res_block(current, num, filter, stride, norm_type, name)
                 self.net[name] = current
 
 
@@ -203,7 +204,7 @@ class LstmSegNet:
     def _get_result(self):  # 将网络单次执行结果 计算出准确度
         with tf.variable_scope("GetResult"):
             x = tf.squeeze(self.net['CONV_LAST'])
-            
+
             x = tf.nn.softmax(x,axis=3)
 
             liver_result, liver_bg = tf.split(x, [1, 1], axis=3)
@@ -277,7 +278,7 @@ class LstmSegNet:
         self.net[name].append(output)
         return output
 
-    def _res_block(self, input, nums, filter, stride, name):  # ResNet模块实现方法
+    def _res_block(self, input, nums, filter, stride,norm_type, name):  # ResNet模块实现方法
         add_layer = Conv2d(input=input, filter=filter, strides=stride, kernel=[1, 1], layer_name='ADD_CONV')
         output = input
         with tf.variable_scope(name):
@@ -287,13 +288,15 @@ class LstmSegNet:
                 else:
                     strides = 1
                 with tf.variable_scope('Bottleneck' + str(i)):
-                    w = tf.Variable(initial_value=[1], dtype=tf.float32)
-                    BN_1 = tf.contrib.slim.batch_norm(output, is_training=self.is_train, scope='BN_1')
-                    x_1 = Relu(BN_1)
+                    # w = tf.Variable(initial_value=[1], dtype=tf.float32)
+                    norm_1 = norm(output, norm_type=norm_type, is_train=self.is_train, scope='NORM_1')
+                    x_1 = Relu(norm_1)
+
                     conv_1 = Conv2d(input=x_1, strides=strides, filter=filter, kernel=[3, 3], layer_name='CONV_1')
 
-                    BN_2 = tf.contrib.slim.batch_norm(conv_1, is_training=self.is_train, scope='BN_2')
-                    x_2 = Relu(BN_2)
+                    norm_2 = norm(conv_1,norm_type=norm_type,is_train=self.is_train, scope='NORM_2')
+
+                    x_2 = Relu(norm_2)
                     conv = Conv2d(input=x_2, filter=filter, kernel=[3, 3], layer_name='CONV_2')
 
                     output = add_layer + conv
