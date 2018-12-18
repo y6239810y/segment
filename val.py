@@ -53,7 +53,7 @@ def net_val(model, root, weights, times):  # 执行评估步骤
         print("=================================================================================")
         print("=================================================================================")
         print(
-            "time: " + str(times) + "  Dicom: " + str(i + 1) + " total_dice: " + str(total_dice),
+            "time: " + str(times) + "  test: " + str(i + 1) + " total_dice: " + str(total_dice),
             " total_iou: " + str(total_iou),
         )
         print("\n\n\n")
