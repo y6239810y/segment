@@ -1,7 +1,7 @@
 from tools import *
 from conv_lstm import SegLSTMCell
 import tensorflow.contrib.slim as slim
-import os,shutil
+import os, shutil
 
 
 class LstmSegNet:
@@ -30,6 +30,7 @@ class LstmSegNet:
         self.test_times = 0  # 已经测试次数, 会把这个记录到tensorboard
         self.global_step = tf.Variable(0, trainable=False)
         self.learning_rate = learning_rate
+        self.lr = learning_rate
         self.threshold = threshold
         self.resume = resume
         self.sess = tf.Session()
@@ -48,7 +49,7 @@ class LstmSegNet:
                     conv_stride = value['stride']
                     conv_filter = value['filter']
                     norm_type = value['norm']
-                    current = norm(current,norm_type, is_train=self.is_train, scope=norm_type)
+                    current = norm(current, norm_type, is_train=self.is_train, scope=norm_type)
                     current = Relu(current, name='RELU')
 
                     current = Conv2d(input=current, filter=conv_filter, kernel=conv_kernel, strides=conv_stride)
@@ -64,12 +65,32 @@ class LstmSegNet:
 
 
             elif name.split('_')[0] == 'RES':  # ResNet模块
-                num = value['num']
-                filter = value['filter']
-                stride = value['stride']
-                norm_type = value['norm']
-                current = self._res_block(current, num, filter, stride, norm_type, name)
+                with tf.variable_scope(name):
+                    num = value['num']
+                    filter = value['filter']
+                    stride = value['stride']
+                    norm_type = value['norm']
+                    current = self._res_block(current, num, filter, stride, norm_type, name)
                 self.net[name] = current
+
+                if value['supervise']:
+                    with tf.variable_scope(name + "_SUPERVISE"):
+                        current_shape = current.shape
+                        origin_shape = self.input.shape
+                        supervise_current = current
+                        count = 1
+                        while not current_shape[1] == origin_shape[1]:
+                            if current_shape[1] == origin_shape[1]//2:
+                                filter = 2
+                            else:
+                                filter = supervise_current.shape[-1] // 2
+                            supervise_current = Upsample_2d(input=supervise_current, kernel=[3, 3],
+                                                            filter=filter,
+                                                            layer_name="upsample_" + str(count))
+                            current_shape = supervise_current.shape
+                            count += 1
+
+                    self.net[name + "_SUPERVISE"] = supervise_current
 
 
             elif name.split('_')[0] == 'UPSAMPLE':  # 上采样模块
@@ -86,6 +107,7 @@ class LstmSegNet:
                     layer = self.net[layer_name]
                     current = tf.concat([current, layer], 3)
                 self.net[name] = current
+
 
             elif name.split('_')[0] == 'ATROUS':
                 filter = value['filter']
@@ -139,18 +161,17 @@ class LstmSegNet:
 
                 self.loss = tf.reduce_mean(self.softmax_cost * self.weight_map)  # 损失函数权值调整
 
+                for num,key in enumerate(self.net.keys()):
+                    if "SUPERVISE" in key:
+                        supervise_current = self.net[key]
+                        supervise_current = tf.squeeze(supervise_current)
+                        supervise_softmax_cost = tf.nn.softmax_cross_entropy_with_logits_v2(logits=supervise_current, labels=self.y)
+                        self.loss += 5 * self.lr * tf.reduce_mean(supervise_softmax_cost * self.weight_map)
+
+
             elif loss_func == 'dice':
-                current = tf.squeeze(current)
-                current = tf.nn.softmax(current,axis=3)
+                self.class_weights = tf.placeholder(tf.float32, name='class_weights')
 
-                self.obj_map, self.bg_map = tf.split(current, 2, 3)
-                self.label_obj_map, self.label_bg_map = tf.split(self.y, 2, 3)
-
-                self.obj_map = tf.squeeze(self.obj_map)
-
-                self.loss = 1 - dice_coe(output=self.obj_map,
-                                              target=tf.squeeze(tf.cast(self.label_obj_map, tf.float32)))
-            elif loss_func == 'focal':
                 current = tf.squeeze(current)
                 current = tf.nn.softmax(current, axis=3)
 
@@ -159,7 +180,33 @@ class LstmSegNet:
 
                 self.obj_map = tf.squeeze(self.obj_map)
 
-                self.loss = focal_loss(logits=self.obj_map,onehot_labels=tf.squeeze(tf.cast(self.label_obj_map, tf.float32)))
+                self.loss = 1 - dice_coe(output=self.obj_map,
+                                         target=tf.squeeze(tf.cast(self.label_obj_map, tf.float32)))
+
+                for num,key in enumerate(self.net.keys()):
+                    if "SUPERVISE" in key:
+                        supervise_current = self.net[key]
+                        supervise_current = tf.squeeze(supervise_current)
+                        supervise_current = tf.nn.softmax(supervise_current, axis=3)
+                        supervise_obj_map, supervise_bg_map = tf.split(supervise_current, 2, 3)
+                        supervise_cost = 1 - dice_coe(output=supervise_obj_map,
+                                         target=tf.squeeze(tf.cast(self.label_obj_map, tf.float32)))
+
+                        self.loss += 5 * self.lr * supervise_cost
+                
+            elif loss_func == 'focal':
+                self.class_weights = tf.placeholder(tf.float32, name='class_weights')
+
+                current = tf.squeeze(current)
+
+                self.loss = focal_loss(logits=current, onehot_labels=tf.squeeze(tf.cast(self.y, tf.float32)))
+
+                for num,key in enumerate(self.net.keys()):
+                    if "SUPERVISE" in key:
+                        supervise_current = self.net[key]
+                        supervise_current = tf.squeeze(supervise_current)
+
+                        self.loss += 5 * self.lr * focal_loss(logits=supervise_current, onehot_labels=tf.squeeze(tf.cast(self.y, tf.float32)))
 
 
             else:
@@ -216,7 +263,7 @@ class LstmSegNet:
         with tf.variable_scope("GetResult"):
             x = tf.squeeze(self.net['CONV_LAST'])
 
-            x = tf.nn.softmax(x,axis=3)
+            x = tf.nn.softmax(x, axis=3)
 
             liver_result, liver_bg = tf.split(x, [1, 1], axis=3)
 
@@ -228,7 +275,7 @@ class LstmSegNet:
 
             # result_dice = dice_hard_coe(liver_result,label_liver,threshold=self.threshold)
 
-            result_iou = iou_coe(liver_result,tf.cast(label_liver,tf.float32),threshold=self.threshold)
+            result_iou = iou_coe(liver_result, tf.cast(label_liver, tf.float32), threshold=self.threshold)
 
         return liver_result, result_iou
 
@@ -289,29 +336,29 @@ class LstmSegNet:
         self.net[name].append(output)
         return output
 
-    def _res_block(self, input, nums, filter, stride,norm_type, name):  # ResNet模块实现方法
+    def _res_block(self, input, nums, filter, stride, norm_type, name):  # ResNet模块实现方法
         add_layer = Conv2d(input=input, filter=filter, strides=stride, kernel=[1, 1], layer_name='ADD_CONV')
         output = input
-        with tf.variable_scope(name):
-            for i in range(1, nums + 1):
-                if i == 1:
-                    strides = stride
-                else:
-                    strides = 1
-                with tf.variable_scope('Bottleneck' + str(i)):
-                    # w = tf.Variable(initial_value=[1], dtype=tf.float32)
-                    norm_1 = norm(output, norm_type=norm_type, is_train=self.is_train, scope='NORM_1')
-                    x_1 = Relu(norm_1)
 
-                    conv_1 = Conv2d(input=x_1, strides=strides, filter=filter, kernel=[3, 3], layer_name='CONV_1')
+        for i in range(1, nums + 1):
+            if i == 1:
+                strides = stride
+            else:
+                strides = 1
+            with tf.variable_scope('Bottleneck' + str(i)):
+                # w = tf.Variable(initial_value=[1], dtype=tf.float32)
+                norm_1 = norm(output, norm_type=norm_type, is_train=self.is_train, scope='NORM_1')
+                x_1 = Relu(norm_1)
 
-                    norm_2 = norm(conv_1,norm_type=norm_type,is_train=self.is_train, scope='NORM_2')
+                conv_1 = Conv2d(input=x_1, strides=strides, filter=filter, kernel=[3, 3], layer_name='CONV_1')
 
-                    x_2 = Relu(norm_2)
-                    conv = Conv2d(input=x_2, filter=filter, kernel=[3, 3], layer_name='CONV_2')
+                norm_2 = norm(conv_1, norm_type=norm_type, is_train=self.is_train, scope='NORM_2')
 
-                    output = add_layer + conv
-                    add_layer = output
+                x_2 = Relu(norm_2)
+                conv = Conv2d(input=x_2, filter=filter, kernel=[3, 3], layer_name='CONV_2')
+
+                output = add_layer + conv
+                add_layer = output
         self.net[name] = output
         return output
 

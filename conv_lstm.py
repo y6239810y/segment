@@ -44,7 +44,7 @@ def seg_conv(args, output_size, filter_size, is_train):
             'CONV_LAST'
         ]
         layers_kernels = [
-            {"kernel": filter_size, "stride": 1, "filter": output_size, "norm":'group'}  # CONV_LAST
+            {"kernel": filter_size, "stride": 1, "filter": output_size, "norm":'batch'}  # CONV_LAST
         ]
         current = input
         for name, value in zip(layers, layers_kernels):
