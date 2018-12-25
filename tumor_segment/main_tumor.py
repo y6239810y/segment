@@ -2,8 +2,8 @@ from model import LstmSegNet
 from get_data import *
 import re
 from tools import *
-from train import net_train
-from val import net_val
+from train_tumor import net_train
+from val_tumor import net_val
 import argparse
 from statistics import *
 
@@ -13,7 +13,7 @@ def str2bool(v):
 
 
 parser = argparse.ArgumentParser(
-    description='Liver segmentation with lstmConvNet by tensorflow')
+    description='tumor segmentation with lstmConvNet by tensorflow')
 
 parser.add_argument('--dataset_root', default="/workspace/mnt/group/alg-pro/yankai/segment/data/pre_process",
                     help='Dataset root directory path')
@@ -40,7 +40,7 @@ parser.add_argument('--decay_steps', default=300, type=int,
                     help='Weight decay steps for SGD')
 
 parser.add_argument('--threshold', default=0.5, type=float,
-                    help='threshold to filter probability map of liver')
+                    help='threshold to filter probability map of tumor')
 
 parser.add_argument('--width', default=512, type=int,
                     help='the width of input data')
@@ -57,7 +57,7 @@ parser.add_argument('--loss_func', default='cross_entropy', type=str,
 parser.add_argument('--weights', default=[100, 10], type=list,
                     help='the weights of proportion between object and background')
 
-parser.add_argument('--filter_no_liver', default=10, type=int,
+parser.add_argument('--filter_no_tumor', default=10, type=int,
                     help='the probability to filter on_object')
 
 parser.add_argument('--down_sample', default=1, type=int,
@@ -122,7 +122,7 @@ if __name__ == '__main__':
     file_test_list = [file for file in os.listdir(args.dataset_root) if
                       int(re.sub("\D", "", file)) > 130 and "volume" in file]
 
-    avg_liver_best = [0 for i in range(len(file_test_list))]
+    avg_tumor_best = [0 for i in range(len(file_test_list))]
 
     model.train_times = 0
     model.test_times = 0
@@ -131,22 +131,22 @@ if __name__ == '__main__':
     init_statistics(save_path=args.save_path, batch_size=args.batch_size, learning_rate=args.lr,
                     decay_rate=args.decay_rate,
                     decay_steps=args.decay_steps, threshold=args.threshold, width=args.width, height=args.height,
-                    loss_func=args.loss_func, weights=args.weights, filter_no_liver=args.filter_no_liver
+                    loss_func=args.loss_func, weights=args.weights, filter_no_tumor=args.filter_no_tumor
                     )
     count = 5
     for time in range(args.epochs):
         net_train(model=model, root=args.dataset_root, weights=weights, times=time + 1, down_sample=args.down_sample)
-        avg_liver = net_val(model=model, root=args.dataset_root, weights=weights, times=time + 1,
+        avg_tumor = net_val(model=model, root=args.dataset_root, weights=weights, times=time + 1,
                             down_sample=args.down_sample)
 
-        if (np.sum(avg_liver) > np.sum(avg_liver_best)):
-            avg_liver_best = avg_liver
+        if (np.sum(avg_tumor) > np.sum(avg_tumor_best)):
+            avg_tumor_best = avg_tumor
             model._store(True)
         else:
             model._store(False)
-        print("avg_liver_best: " + str(np.sum(avg_liver_best) / len(file_test_list)))
+        print("avg_tumor_best: " + str(np.sum(avg_tumor_best) / len(file_test_list)))
 
         if weights[1] + 5 < 100:
             weights[1] += 5
         else:
-            weights[1] = 100
+            weights[1] = 5

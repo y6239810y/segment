@@ -241,14 +241,14 @@ class LstmSegNet:
 
             self.loss_summary = tf.summary.scalar('loss', self.loss)
 
-        self.liver_result, self.liver_correct_prediction = self._get_result()
+        self.tumor_result, self.tumor_correct_prediction = self._get_result()
 
         with tf.variable_scope("accurary"):  # 计算准确度并保存到tensorboard
-            self.liver_IOU = tf.placeholder(tf.float32, name="liver_IOU")
+            self.tumor_IOU = tf.placeholder(tf.float32, name="tumor_IOU")
 
-            self.liver_IOU = tf.reduce_mean(self.liver_IOU)
+            self.tumor_IOU = tf.reduce_mean(self.tumor_IOU)
 
-            self.liver_iou = tf.summary.scalar('liver_iou', self.liver_IOU)
+            self.tumor_iou = tf.summary.scalar('tumor_iou', self.tumor_IOU)
 
             self.saver = tf.train.Saver()
             self.sess.run(tf.global_variables_initializer())
@@ -265,19 +265,19 @@ class LstmSegNet:
 
             x = tf.nn.softmax(x, axis=3)
 
-            liver_result, liver_bg = tf.split(x, [1, 1], axis=3)
+            tumor_result, tumor_bg = tf.split(x, [1, 1], axis=3)
 
-            label_liver, label_bg = tf.split(self.y, [1, 1], axis=3)  # 分离背景和前景
+            label_tumor, label_bg = tf.split(self.y, [1, 1], axis=3)  # 分离背景和前景
 
-            liver_result = tf.squeeze(liver_result)
+            tumor_result = tf.squeeze(tumor_result)
 
-            label_liver = tf.squeeze(label_liver)
+            label_tumor = tf.squeeze(label_tumor)
 
-            # result_dice = dice_hard_coe(liver_result,label_liver,threshold=self.threshold)
+            # result_dice = dice_hard_coe(tumor_result,label_tumor,threshold=self.threshold)
 
-            result_iou = iou_coe(liver_result, tf.cast(label_liver, tf.float32), threshold=self.threshold)
+            result_iou = iou_coe(tumor_result, tf.cast(label_tumor, tf.float32), threshold=self.threshold)
 
-        return liver_result, result_iou
+        return tumor_result, result_iou
 
     def _reload(self):  # 重新载入模型
         if os.path.isdir(os.path.join(self.save_path, "model")):
@@ -387,9 +387,9 @@ class LstmSegNet:
             return net
 
     def _run_accurary(self, IOU):  # 将网络外部计算出的整套结果准确度参数，存入tensorboard
-        self.merged_recall = tf.summary.merge([self.liver_iou])
+        self.merged_recall = tf.summary.merge([self.tumor_iou])
         result, step = self.sess.run((self.merged_recall, self.global_step),
-                                     feed_dict={self.liver_IOU: IOU
+                                     feed_dict={self.tumor_IOU: IOU
                                                 })
         if (self.is_train):  # 判断是不是在训练，如果是训练 存入train tensorboard 否则存入test tensorboard
             self.train_writer.add_summary(result, self.train_times)
@@ -407,13 +407,13 @@ class LstmSegNet:
         else:
             os.makedirs(os.path.join(self.save_path, "tensorboard"))
 
-        _, loss, liver, liver_iou, learn_rate, result, step = self.sess.run((
-            self.train_op, self.loss, self.liver_result, self.liver_correct_prediction,
+        _, loss, tumor, tumor_iou, learn_rate, result, step = self.sess.run((
+            self.train_op, self.loss, self.tumor_result, self.tumor_correct_prediction,
             self.lr, self.merged, self.global_step),
             feed_dict={self.x: inputs, self.y: labels, self.class_weights: weights})
 
         self.train_writer.add_summary(result, step)
-        return loss, liver, liver_iou, learn_rate, step
+        return loss, tumor, tumor_iou, learn_rate, step
 
     def _val(self, inputs, labels, weights):  # 开始执行测试的操作函数
         self.is_train = False
@@ -422,8 +422,8 @@ class LstmSegNet:
         else:
             os.makedirs(os.path.join(self.save_path, "tensorboard"))
 
-        loss, liver, liver_iou, learn_rate, step = self.sess.run(
-            (self.loss, self.liver_result, self.liver_correct_prediction, self.lr, self.global_step),
+        loss, tumor, tumor_iou, learn_rate, step = self.sess.run(
+            (self.loss, self.tumor_result, self.tumor_correct_prediction, self.lr, self.global_step),
             feed_dict={self.x: inputs, self.y: labels, self.class_weights: weights})
 
-        return loss, liver, liver_iou, learn_rate, step
+        return loss, tumor, tumor_iou, learn_rate, step

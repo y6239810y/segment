@@ -3,7 +3,7 @@ from statistics import *
 import numpy as np
 import random,re
 
-def net_train(model, root, weights, times,down_sample, filter_no_liver = 10):  # 训练执行步骤
+def net_train(model, root, weights, times,down_sample, filter_no_tumor = 10):  # 训练执行步骤
 
     C_SIZE = model.batch_size
     W_SIZE = model.width
@@ -18,7 +18,7 @@ def net_train(model, root, weights, times,down_sample, filter_no_liver = 10):  #
 
         data_array, label_array = read_data(root, file, random.randint(0,4),down_sample=down_sample)
 
-        out_vtk_liver = np.zeros(data_array.shape)
+        out_vtk_tumor = np.zeros(data_array.shape)
 
         indexs = chop_datas(data_array, W_SIZE, H_SIZE, C_SIZE, train=True)  # 获取到每个长方体的起始点的坐标索引
         data_list = list(indexs)
@@ -28,35 +28,35 @@ def net_train(model, root, weights, times,down_sample, filter_no_liver = 10):  #
             data = data_array[c_start:c_end, w_start:w_end, h_start:h_end]
             label = label_array[c_start:c_end, w_start:w_end, h_start:h_end]
 
-            if (np.sum(label[:, :, :, 0]) > 0 or j % filter_no_liver == 0):  # 过滤掉部分无目标的长方体
-                liver_percentage = np.sum(label[:, :, :, 0]) / np.size(label[:, :, :, 0])
+            if (np.sum(label[:, :, :, 0]) > 0 or j % filter_no_tumor == 0):  # 过滤掉部分无目标的长方体
+                tumor_percentage = np.sum(label[:, :, :, 0]) / np.size(label[:, :, :, 0])
 
-                loss, liver,liver_iou,learn_rate, step = model._train(data, label, weights)
-                out_vtk_liver[c_start:c_end, w_start:w_end, h_start:h_end] = liver
+                loss, tumor,tumor_iou,learn_rate, step = model._train(data, label, weights)
+                out_vtk_tumor[c_start:c_end, w_start:w_end, h_start:h_end] = tumor
 
                 if (j % 1 == 0):
-                    print('step ', step, ' liver_percentage ', liver_percentage, 'learning_rate', learn_rate)
-                    print(' loss ', loss, ' liver_iou ', liver_iou)
+                    print('step ', step, ' tumor_percentage ', tumor_percentage, 'learning_rate', learn_rate)
+                    print(' loss ', loss, ' tumor_iou ', tumor_iou)
                     print("=================================================================================")
 
         over = (i == len(file_list) - 1)
         ious = []
         for thr in [0.4,0.5,0.6]:
-            out_vtk_liver_with_thr = 1.0*(out_vtk_liver>thr)
+            out_vtk_tumor_with_thr = 1.0*(out_vtk_tumor>thr)
             label_array_obj = 1.0*(label_array[:, :, :, 0] > thr)
 
-            total_iou = np.sum(1.0 * out_vtk_liver_with_thr * label_array_obj)/(1.0*np.sum((out_vtk_liver_with_thr+label_array_obj)>0))
+            total_iou = np.sum(1.0 * out_vtk_tumor_with_thr * label_array_obj)/(1.0*np.sum((out_vtk_tumor_with_thr+label_array_obj)>0))
             ious.append(total_iou)
 
         add_train(times,model.save_path,file,ious,over)
 
 
-        out_vtk_liver = 1.0 * (out_vtk_liver > THRESHOLD)
+        out_vtk_tumor = 1.0 * (out_vtk_tumor > THRESHOLD)
         label_array_obj = 1.0 * (label_array[:, :, :, 0] > THRESHOLD)
 
-        total_dice = np.sum(2.0 * out_vtk_liver * label_array_obj) / (1.0 * np.sum(out_vtk_liver + label_array_obj))
-        total_iou = np.sum(1.0 * out_vtk_liver * label_array_obj) / (
-                    1.0 * np.sum((out_vtk_liver + label_array_obj) > 0))
+        total_dice = np.sum(2.0 * out_vtk_tumor * label_array_obj) / (1.0 * np.sum(out_vtk_tumor + label_array_obj))
+        total_iou = np.sum(1.0 * out_vtk_tumor * label_array_obj) / (
+                    1.0 * np.sum((out_vtk_tumor + label_array_obj) > 0))
 
         print(total_dice,total_iou)
         model._run_accurary(total_iou)  # 将整体准确度上传tensorboard
@@ -68,4 +68,4 @@ def net_train(model, root, weights, times,down_sample, filter_no_liver = 10):  #
             " total_iou: " + str(total_iou),
         )
         print("\n\n\n")
-        del out_vtk_liver,
+        del out_vtk_tumor

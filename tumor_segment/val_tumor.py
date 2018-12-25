@@ -6,7 +6,7 @@ from skimage import measure
 
 
 def net_val(model, root, weights, times, down_sample):  # 执行评估步骤
-    avg_liver = []
+    avg_tumor = []
     C_SIZE = model.batch_size
     W_SIZE = model.width
     H_SIZE = model.height
@@ -18,7 +18,7 @@ def net_val(model, root, weights, times, down_sample):  # 执行评估步骤
     for i, file in enumerate(file_list):
         data_array, label_array = read_data(root, file, 1, down_sample)
 
-        out_vtk_liver = np.zeros(data_array.shape)
+        out_vtk_tumor = np.zeros(data_array.shape)
 
         indexs = chop_datas(data_array, W_SIZE, H_SIZE, C_SIZE, train=False)  # 获取到每个长方体的起始点的坐标索引
         data_list = list(indexs)
@@ -28,27 +28,27 @@ def net_val(model, root, weights, times, down_sample):  # 执行评估步骤
             data = data_array[c_start:c_end, w_start:w_end, h_start:h_end]
             label = label_array[c_start:c_end, w_start:w_end, h_start:h_end]
 
-            loss, liver, liver_iou, learn_rate, step = model._val(data, label, weights)
+            loss, tumor, tumor_iou, learn_rate, step = model._val(data, label, weights)
 
-            out_vtk_liver[c_start:c_end, w_start:w_end, h_start:h_end] = liver
+            out_vtk_tumor[c_start:c_end, w_start:w_end, h_start:h_end] = tumor
 
         over = (i == len(file_list) - 1)
         ious = []
         for thr in [0.4, 0.5, 0.6]:
-            out_vtk_liver_with_thr = 1.0 * (out_vtk_liver > thr)
+            out_vtk_tumor_with_thr = 1.0 * (out_vtk_tumor > thr)
             label_array_obj = 1.0 * (label_array[:, :, :, 0] > thr)
 
-            total_iou = np.sum(1.0 * out_vtk_liver_with_thr * label_array_obj) / (
-                    1.0 * np.sum((out_vtk_liver_with_thr + label_array_obj) > 0))
+            total_iou = np.sum(1.0 * out_vtk_tumor_with_thr * label_array_obj) / (
+                    1.0 * np.sum((out_vtk_tumor_with_thr + label_array_obj) > 0))
             ious.append(total_iou)
 
         add_val(times, model.save_path, file, ious, over)
 
-        out_vtk_liver = 1.0 * (out_vtk_liver > THRESHOLD)
+        out_vtk_tumor = 1.0 * (out_vtk_tumor > THRESHOLD)
         label_array_obj = 1.0 * (label_array[:, :, :, 0] > THRESHOLD)
 
         # post process
-        pred_seg = measure.label(out_vtk_liver, 4)
+        pred_seg = measure.label(out_vtk_tumor, 4)
         props = measure.regionprops(pred_seg)
 
         max_area = 0
@@ -61,11 +61,11 @@ def net_val(model, root, weights, times, down_sample):  # 执行评估步骤
         pred_seg[pred_seg != max_index] = 0
         pred_seg[pred_seg == max_index] = 1
 
-        out_vtk_liver = pred_seg.astype(np.uint8)
+        out_vtk_tumor = pred_seg.astype(np.uint8)
 
-        total_dice = np.sum(2.0 * out_vtk_liver * label_array_obj) / (1.0 * np.sum(out_vtk_liver + label_array_obj))
-        total_iou = np.sum(1.0 * out_vtk_liver * label_array_obj) / (
-                    1.0 * np.sum((out_vtk_liver + label_array_obj) > 0))
+        total_dice = np.sum(2.0 * out_vtk_tumor * label_array_obj) / (1.0 * np.sum(out_vtk_tumor + label_array_obj))
+        total_iou = np.sum(1.0 * out_vtk_tumor * label_array_obj) / (
+                    1.0 * np.sum((out_vtk_tumor + label_array_obj) > 0))
         print("before: ", ious, "after: ", total_iou)
         model._run_accurary(total_iou)  # 将整体准确度上传tensorboard
         print("=================================================================================")
@@ -83,7 +83,7 @@ def net_val(model, root, weights, times, down_sample):  # 执行评估步骤
             os.makedirs(os.path.join(model.save_path, 'vtk'))
 
         origin_dicom = sitk.ReadImage(os.path.join(root, file))
-        seg_result = sitk.GetImageFromArray(out_vtk_liver)
+        seg_result = sitk.GetImageFromArray(out_vtk_tumor)
 
         seg_result.SetDirection(origin_dicom.GetDirection())
         seg_result.SetOrigin(origin_dicom.GetOrigin())
@@ -91,8 +91,8 @@ def net_val(model, root, weights, times, down_sample):  # 执行评估步骤
 
         sitk.WriteImage(seg_result, os.path.join(os.path.join(model.save_path, 'vtk'), file))
 
-        avg_liver.append(total_iou)
+        avg_tumor.append(total_iou)
 
-        del out_vtk_liver, pred_seg, seg_result, origin_dicom
+        del out_vtk_tumor, pred_seg, seg_result, origin_dicom
 
-    return avg_liver
+    return avg_tumor
