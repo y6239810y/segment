@@ -33,9 +33,7 @@ class LstmSegNet:
         self.lr = learning_rate
         self.threshold = threshold
         self.resume = resume
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        self.sess = tf.Session(config=config)
+        self.sess = tf.Session()
         self.net = {}
         self.save_path = save_path
         self.layers = layers

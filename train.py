@@ -10,7 +10,7 @@ def net_train(model, root, weights, times,down_sample, filter_no_liver = 10):  #
     H_SIZE = model.height
     THRESHOLD = model.threshold
 
-    file_list = [file for file in os.listdir(root) if int(re.sub("\D", "", file)) <= 130 and "volume" in file]
+    file_list = [file for file in os.listdir(root) if int(re.sub("\D", "", file)) < 30 and "volume" in file]
 
     random.shuffle(file_list)
 

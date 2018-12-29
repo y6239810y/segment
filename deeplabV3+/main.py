@@ -15,7 +15,7 @@ def str2bool(v):
 parser = argparse.ArgumentParser(
     description='Liver segmentation with lstmConvNet by tensorflow')
 
-parser.add_argument('--dataset_root', default="/workspace/mnt/group/alg-pro/yankai/segment/data/lung_pre_process",
+parser.add_argument('--dataset_root', default="/workspace/mnt/group/alg-pro/yankai/segment/data/pre_process",
                     help='Dataset root directory path')
 
 parser.add_argument('--save_path', default="test",
@@ -121,9 +121,9 @@ if __name__ == '__main__':
                        width=args.width, height=args.height, resume=args.resume, loss_func=args.loss_func
                        )
     file_list = [file for file in os.listdir(args.dataset_root) if
-                 int(re.sub("\D", "", file)) < 30 and "volume" in file]
+                 int(re.sub("\D", "", file)) <= 110 and "volume" in file]
     file_test_list = [file for file in os.listdir(args.dataset_root) if
-                      int(re.sub("\D", "", file)) >= 30 and int(re.sub("\D", "", file)) <= 130 and "volume" in file]
+                      int(re.sub("\D", "", file)) > 110 and int(re.sub("\D", "", file)) <= 130 and "volume" in file]
 
     avg_liver_best = [0 for i in range(len(file_test_list))]
 

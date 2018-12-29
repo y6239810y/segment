@@ -15,7 +15,7 @@ def str2bool(v):
 parser = argparse.ArgumentParser(
     description='Liver segmentation with lstmConvNet by tensorflow')
 
-parser.add_argument('--dataset_root', default="/workspace/mnt/group/alg-pro/yankai/segment/data/lung_pre_process",
+parser.add_argument('--dataset_root', default="/workspace/mnt/group/alg-pro/yankai/segment/data/pre_process",
                     help='Dataset root directory path')
 
 parser.add_argument('--save_path', default="test",
@@ -48,7 +48,7 @@ parser.add_argument('--width', default=512, type=int,
 parser.add_argument('--height', default=512, type=int,
                     help='the height of input data')
 
-parser.add_argument('--epochs', default=200, type=int,
+parser.add_argument('--epochs', default=50, type=int,
                     help='the number of epochs for training')
 
 parser.add_argument('--loss_func', default='cross_entropy', type=str,
@@ -81,38 +81,50 @@ args.height = args.height // args.down_sample
 if __name__ == '__main__':
 
     layers = [
-        'RES_1', 'RES_2', 'RES_3', 'RES_4', 'RES_5', 'ATROUS', 'LSTM', 'UPSAMPLE_1', 'CONBINE_1', 'RES_8',
-        'UPSAMPLE_2', 'CONBINE_2', 'RES_9', 'UPSAMPLE_3', 'CONBINE_3', 'RES_10', 'UPSAMPLE_5', 'CONBINE_5',
-        'RES_11', 'CONV_LAST'
+        'CONV_1', 'RV_1', 'POOL_1', 'CONV_2', 'RV_2', 'POOL_2', 'CONV_3', 'RV_3', 'POOL_3',
+        'CONV_4','CONV_5',
+        'UPSAMPLE_1', 'CONBINE_1', 'RV_4', 'CONV_6', 'UPSAMPLE_2', 'CONBINE_2', 'RV_5', 'CONV_7',
+        'UPSAMPLE_3', 'CONBINE_3', 'RV_6', 'CONV_LAST',
     ]
     layers_kernels = [
-        {"num": 1, "filter": 32, "stride": 1, "norm": args.norm_type, "supervise": False},  # RES_1
-        {"num": 1, "filter": 64, "stride": 2, "norm": args.norm_type, "supervise": args.supervise},  # RES_2
-        {"num": 1, "filter": 128, "stride": 2, "norm": args.norm_type, "supervise": False},  # RES_3
-        {"num": 1, "filter": 256, "stride": 2, "norm": args.norm_type, "supervise": args.supervise},  # RES_4
-        {"num": 1, "filter": 512, "stride": 2, "norm": args.norm_type, "supervise": False},  # RES_5
+        {"kernel": [3, 3], "stride": 1, "filter": 64, "norm": args.norm_type}, # CONV_1
 
-        {"filter": 512},
+        {"filter":64,"norm": args.norm_type},  # RV_1
 
-        {"filter": 512, "norm": args.norm_type, "lstm": args.lstm},
+        {'pool_way': Max_Pooling_2d, "kernel": [2, 2], "stride": 2},  # POOL_1
 
-        {"kernel": [3, 3], "stride": [2, 2], "filter": 256},  # UPSAMPLE_3
-        {"add_layer": 'RES_4', "kernel": [1, 1]},  # CONBINE_3
-        {"num": 1, "filter": 256, "stride": 1, "norm": args.norm_type, "supervise": False},  # RES_9
+        {"kernel": [3, 3], "stride": 1, "filter": 128, "norm": args.norm_type},  # CONV_2
 
-        {"kernel": [3, 3], "stride": [2, 2], "filter": 128},  # UPSAMPLE_4
-        {"add_layer": 'RES_3', "kernel": [1, 1]},  # CONBINE_4
-        {"num": 1, "filter": 128, "stride": 1, "norm": args.norm_type, "supervise": False},  # RES_10
+        {"filter": 128, "norm": args.norm_type},  # RV_2
 
-        {"kernel": [3, 3], "stride": [2, 2], "filter": 64},  # UPSAMPLE_5
-        {"add_layer": 'RES_2', "kernel": [1, 1]},  # CONBINE_5
-        {"num": 1, "filter": 64, "stride": 1, "norm": args.norm_type, "supervise": False},  # RES_11
+        {'pool_way': Max_Pooling_2d, "kernel": [2, 2], "stride": 2},  # POOL_2
 
-        {"kernel": [3, 3], "stride": [2, 2], "filter": 32},  # UPSAMPLE_5
-        {"add_layer": 'RES_1', "kernel": [1, 1]},  # CONBINE_5
-        {"num": 1, "filter": 32, "stride": 1, "norm": args.norm_type, "supervise": False},  # RES_11
+        {"kernel": [3, 3], "stride": 1, "filter": 256, "norm": args.norm_type},  # CONV_3
 
-        {"kernel": [3, 3], "stride": 1, "filter": 2, "norm": args.norm_type}  # CONV_LAST
+        {"filter": 256, "norm": args.norm_type},  # RV_3
+
+        {'pool_way': Max_Pooling_2d, "kernel": [2, 2], "stride": 2},  # POOL_3
+
+        {"kernel": [3, 3], "stride": 1, "filter": 512, "norm": args.norm_type},  # CONV_1
+
+        {"kernel": [3, 3], "stride": 1, "filter": 256, "norm": args.norm_type},  # CONV_1
+
+
+        {"kernel": [3, 3], "stride": [2, 2], "filter": 128},  # UPSAMPLE_1
+        {"add_layer": 'RV_3', "kernel": [1, 1]},  # CONBINE_1
+        {"filter": 256, "norm": args.norm_type},  # RV_4
+        {"kernel": [3, 3], "stride": 1, "filter": 256, "norm": args.norm_type},  # CONV_6
+
+        {"kernel": [3, 3], "stride": [2, 2], "filter": 64},  # UPSAMPLE_2
+        {"add_layer": 'RV_2', "kernel": [1, 1]},  # CONBINE_2
+        {"filter": 128, "norm": args.norm_type},  # RV_5
+        {"kernel": [3, 3], "stride": 1, "filter": 128, "norm": args.norm_type},  # CONV_7
+
+        {"kernel": [3, 3], "stride": [2, 2], "filter": 32},  # UPSAMPLE_3
+        {"add_layer": 'RV_1', "kernel": [1, 1]},  # CONBINE_3
+        {"filter": 64, "norm": args.norm_type},  # RV_6
+        {"kernel": [3, 3], "stride": 1, "filter": 2, "norm": args.norm_type},  # CONV_LAST
+
     ]
 
     model = LstmSegNet(layers=layers, layers_kernels=layers_kernels,
@@ -121,9 +133,9 @@ if __name__ == '__main__':
                        width=args.width, height=args.height, resume=args.resume, loss_func=args.loss_func
                        )
     file_list = [file for file in os.listdir(args.dataset_root) if
-                 int(re.sub("\D", "", file)) < 30 and "volume" in file]
+                 int(re.sub("\D", "", file)) <= 110 and "volume" in file]
     file_test_list = [file for file in os.listdir(args.dataset_root) if
-                      int(re.sub("\D", "", file)) >= 30 and int(re.sub("\D", "", file)) <= 130 and "volume" in file]
+                      int(re.sub("\D", "", file)) > 110 and int(re.sub("\D", "", file)) <= 130 and "volume" in file]
 
     avg_liver_best = [0 for i in range(len(file_test_list))]
 

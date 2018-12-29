@@ -14,7 +14,7 @@ def net_val(model, root, weights, times, down_sample):  # 执行评估步骤
     THRESHOLD = model.threshold
 
     file_list = [file for file in os.listdir(root) if
-                 int(re.sub("\D", "", file)) >= 30 and int(re.sub("\D", "", file)) <= 130 and "volume" in file]
+                 int(re.sub("\D", "", file)) > 110 and int(re.sub("\D", "", file)) <= 130 and "volume" in file]
 
     for i, file in enumerate(file_list):
         t0 = time.time()

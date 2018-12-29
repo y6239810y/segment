@@ -48,12 +48,14 @@ def read_dicom(path):
 def process_tumor():
     root = '/workspace/mnt/group/alg-pro/yankai/segment/data/pre_process'
 
-    new_ct_dir = '/workspace/mnt/group/alg-pro/yankai/segment/data/pre_process_tumor'
-    new_seg_dir = '/workspace/mnt/group/alg-pro/yankai/segment/data/pre_process_tumor'
+    new_ct_dir = '/workspace/mnt/group/alg-pro/yankai/segment/data/pre_process_tumor_new'
+    new_seg_dir = '/workspace/mnt/group/alg-pro/yankai/segment/data/pre_process_tumor_new'
 
     file_list = [file for file in os.listdir(root) if
                  'volume' in file and (int(re.sub("\D", "", file)) <= 130 or int(re.sub("\D", "", file)) > 150)]
     print(file_list)
+    if not os.path.exists(new_ct_dir):
+        os.makedirs(new_ct_dir)
     for ct_file in file_list:
 
         ct_dir = os.path.join(root, ct_file)
@@ -66,11 +68,10 @@ def process_tumor():
         ct_array = sitk.GetArrayFromImage(ct)
         ct_array = (seg_array>0)*ct_array
 
-        ct_array[ct_array==0] = -200
+        ct_array[ct_array==0]=-200
 
-        # avg = np.mean(ct_array)
-        # std = np.std(ct_array)
-        # ct_array = (ct_array - avg) / std
+
+
 
         ct_array = ct_array.astype(np.int16)
 

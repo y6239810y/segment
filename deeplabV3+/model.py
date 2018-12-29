@@ -2,7 +2,8 @@ from tools import *
 from conv_lstm import SegLSTMCell
 import tensorflow.contrib.slim as slim
 import os, shutil
-
+from deeplab_model import deeplab_v3_plus_generator
+_BATCH_NORM_DECAY = 0.9997
 
 class LstmSegNet:
     def __init__(self, layers,
@@ -33,9 +34,7 @@ class LstmSegNet:
         self.lr = learning_rate
         self.threshold = threshold
         self.resume = resume
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        self.sess = tf.Session(config=config)
+        self.sess = tf.Session()
         self.net = {}
         self.save_path = save_path
         self.layers = layers
@@ -43,116 +42,9 @@ class LstmSegNet:
         self.layers_kernels = layers_kernels
 
         current = self.input
-
-        for name, value in zip(self.layers, self.layers_kernels):
-            if name.split('_')[0] == 'CONV':  # 卷积模块
-                with tf.variable_scope(name):
-                    conv_kernel = value['kernel']
-                    conv_stride = value['stride']
-                    conv_filter = value['filter']
-                    norm_type = value['norm']
-                    current = norm(current, norm_type, is_train=self.is_train, scope=norm_type)
-                    current = Relu(current, name='RELU')
-
-                    current = Conv2d(input=current, filter=conv_filter, kernel=conv_kernel, strides=conv_stride)
-                    self.net[name] = current
-
-            elif name.split('_')[0] == 'POOL':  # 池化模块
-                with tf.variable_scope(name):
-                    pool_way = value['pool_way']
-                    pool_kernel = value['kernel']
-                    pool_stride = value['stride']
-                    current = pool_way(x=current, pool_size=pool_kernel, strides=pool_stride)
-                self.net[name] = current
-
-
-            elif name.split('_')[0] == 'RES':  # ResNet模块
-                with tf.variable_scope(name):
-                    num = value['num']
-                    filter = value['filter']
-                    stride = value['stride']
-                    norm_type = value['norm']
-                    current = self._res_block(current, num, filter, stride, norm_type, name)
-                self.net[name] = current
-
-                if value['supervise']:
-                    with tf.variable_scope(name + "_SUPERVISE"):
-                        current_shape = current.shape
-                        origin_shape = self.input.shape
-                        supervise_current = current
-                        count = 1
-                        while not current_shape[1] == origin_shape[1]:
-                            if current_shape[1] == origin_shape[1]//2:
-                                filter = 2
-                            else:
-                                filter = supervise_current.shape[-1] // 2
-                            supervise_current = Upsample_2d(input=supervise_current, kernel=[3, 3],
-                                                            filter=filter,
-                                                            layer_name="upsample_" + str(count))
-                            current_shape = supervise_current.shape
-                            count += 1
-
-                    self.net[name + "_SUPERVISE"] = supervise_current
-
-
-            elif name.split('_')[0] == 'UPSAMPLE':  # 上采样模块
-                up_kernel = value['kernel']
-                up_stride = value['stride']
-                up_filter = value['filter']
-                with tf.variable_scope(name):
-                    current = Upsample_2d(input=current, kernel=up_kernel, filter=up_filter, strides=up_stride)
-                self.net[name] = current
-
-            elif name.split('_')[0] == 'CONBINE':  # 通道融合模块
-                with tf.variable_scope(name):
-                    layer_name = value['add_layer']
-                    layer = self.net[layer_name]
-                    current = tf.concat([current, layer], 3)
-                self.net[name] = current
-
-
-            elif name.split('_')[0] == 'ATROUS':
-                filter = value['filter']
-                current = self._atrous_spatial_pyramid_pooling(inputs=current, scope=name, depth=filter)
-                self.net[name] = current
-
-            elif name.split('_')[0] == 'ADD':  # 相加融合模块
-                with tf.variable_scope(name):
-                    layer_name = value['add_layer']
-                    kernel = value['kernel']
-                    layer = self.net[layer_name]
-                    add_tensor = Conv2d(layer, filter=current.shape[-1], kernel=kernel)
-                    current = current + add_tensor
-                self.net[name] = current
-
-
-            elif name.split('_')[0] == 'LSTM':  # LSTM模块
-                filter = value["filter"]
-                add_lstm = value["lstm"]
-                if add_lstm:
-                    with tf.variable_scope(name):
-                        p_input_list = tf.split(current, batch_size, 0)
-
-                        cell = SegLSTMCell(filter)
-                        state = cell.zero_state(1, current.shape[1], current.shape[2])
-
-                        with tf.variable_scope("ConvLSTM") as scope:  # as BasicLSTMCell
-                            for i, p_input_ in enumerate(p_input_list):
-                                if i > 0:
-                                    scope.reuse_variables()
-                                t_output, state = cell(p_input_, state)
-                                if i == 0:
-                                    self.outs = tf.reshape(t_output,
-                                                           [1, current.shape[1], current.shape[2], current.shape[3]])
-                                else:
-                                    self.outs = tf.concat([self.outs, tf.reshape(t_output,
-                                                                                 [1, current.shape[1], current.shape[2],
-                                                                                  current.shape[3]])], 0)
-                    self.net[name] = self.outs
-                    current = self.outs
-
-                else:
-                    pass
+        model = deeplab_v3_plus_generator(num_classes=2, output_stride=16, base_architecture='resnet_v2_101',
+                                          pre_trained_model='', batch_norm_decay=_BATCH_NORM_DECAY)
+        self.out = model(self.input)
 
         with tf.variable_scope('train'):  # 训练部分
 
@@ -161,7 +53,7 @@ class LstmSegNet:
 
                 self.weight_map = tf.reduce_sum(tf.multiply(tf.cast(self.y, tf.float32), self.class_weights), 3)  # 权值
 
-                current = tf.squeeze(current)
+                current = tf.squeeze(self.out)
 
                 self.softmax_cost = tf.nn.softmax_cross_entropy_with_logits_v2(logits=current, labels=self.y)
 
@@ -178,7 +70,7 @@ class LstmSegNet:
             elif loss_func == 'dice':
                 self.class_weights = tf.placeholder(tf.float32, name='class_weights')
 
-                current = tf.squeeze(current)
+                current = tf.squeeze(self.out)
                 current = tf.nn.softmax(current, axis=3)
 
                 self.obj_map, self.bg_map = tf.split(current, 2, 3)
@@ -203,7 +95,7 @@ class LstmSegNet:
             elif loss_func == 'focal':
                 self.class_weights = tf.placeholder(tf.float32, name='class_weights')
 
-                current = tf.squeeze(current)
+                current = tf.squeeze(self.out)
 
                 self.loss = focal_loss(logits=current, onehot_labels=tf.squeeze(tf.cast(self.y, tf.float32)))
 
@@ -216,7 +108,7 @@ class LstmSegNet:
 
 
             else:
-                self.obj_map, self.bg_map = tf.split(current, 2, 3)
+                self.obj_map, self.bg_map = tf.split(self.out, 2, 3)
                 self.label_obj_map, self.label_bg_map = tf.split(self.y, 2, 3)
 
                 self.obj_map = tf.squeeze(self.obj_map)
@@ -267,7 +159,7 @@ class LstmSegNet:
 
     def _get_result(self):  # 将网络单次执行结果 计算出准确度
         with tf.variable_scope("GetResult"):
-            x = tf.squeeze(self.net['CONV_LAST'])
+            x = self.out
 
             x = tf.nn.softmax(x, axis=3)
 

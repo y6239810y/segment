@@ -1,4 +1,4 @@
-from model import LstmSegNet
+from model_tumor import LstmSegNet
 from get_data import *
 import re
 from tools import *
@@ -15,10 +15,10 @@ def str2bool(v):
 parser = argparse.ArgumentParser(
     description='tumor segmentation with lstmConvNet by tensorflow')
 
-parser.add_argument('--dataset_root', default="/workspace/mnt/group/alg-pro/yankai/segment/data/pre_process",
+parser.add_argument('--dataset_root', default="/workspace/mnt/group/alg-pro/yankai/segment/data/pre_process_tumor",
                     help='Dataset root directory path')
 
-parser.add_argument('--save_path', default="/workspace/mnt/group/alg-pro/yankai/segment",
+parser.add_argument('--save_path', default="tumor_segment",
                     help='the path tensorboard and model save at')
 
 parser.add_argument('--batch_size', default=12, type=int,
@@ -54,7 +54,7 @@ parser.add_argument('--epochs', default=200, type=int,
 parser.add_argument('--loss_func', default='cross_entropy', type=str,
                     help='loss_func for training')
 
-parser.add_argument('--weights', default=[100, 10], type=list,
+parser.add_argument('--weights', default=[100, 1], type=list,
                     help='the weights of proportion between object and background')
 
 parser.add_argument('--filter_no_tumor', default=10, type=int,
@@ -118,9 +118,9 @@ if __name__ == '__main__':
                        width=args.width, height=args.height, resume=args.resume, loss_func=args.loss_func
                        )
     file_list = [file for file in os.listdir(args.dataset_root) if
-                 int(re.sub("\D", "", file)) <= 130 and "volume" in file]
+                 int(re.sub("\D", "", file)) <= 110 and "volume" in file]
     file_test_list = [file for file in os.listdir(args.dataset_root) if
-                      int(re.sub("\D", "", file)) > 130 and "volume" in file]
+                      int(re.sub("\D", "", file)) > 110 and "volume" in file]
 
     avg_tumor_best = [0 for i in range(len(file_test_list))]
 

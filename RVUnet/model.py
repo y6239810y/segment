@@ -33,9 +33,7 @@ class LstmSegNet:
         self.lr = learning_rate
         self.threshold = threshold
         self.resume = resume
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        self.sess = tf.Session(config=config)
+        self.sess = tf.Session()
         self.net = {}
         self.save_path = save_path
         self.layers = layers
@@ -51,10 +49,12 @@ class LstmSegNet:
                     conv_stride = value['stride']
                     conv_filter = value['filter']
                     norm_type = value['norm']
-                    current = norm(current, norm_type, is_train=self.is_train, scope=norm_type)
-                    current = Relu(current, name='RELU')
 
                     current = Conv2d(input=current, filter=conv_filter, kernel=conv_kernel, strides=conv_stride)
+                    current = norm(current, norm_type, is_train=self.is_train, scope=norm_type)
+                    current = PRelu(current, name='PRELU')
+
+
                     self.net[name] = current
 
             elif name.split('_')[0] == 'POOL':  # 池化模块
@@ -107,6 +107,9 @@ class LstmSegNet:
                 with tf.variable_scope(name):
                     layer_name = value['add_layer']
                     layer = self.net[layer_name]
+
+                    layer = Conv2d(layer,filter=layer.shape[-1]//2,kernel=[1,1])
+
                     current = tf.concat([current, layer], 3)
                 self.net[name] = current
 
@@ -123,6 +126,33 @@ class LstmSegNet:
                     layer = self.net[layer_name]
                     add_tensor = Conv2d(layer, filter=current.shape[-1], kernel=kernel)
                     current = current + add_tensor
+                self.net[name] = current
+
+
+
+            elif name.split('_')[0] == 'RV':
+                with tf.variable_scope(name):
+                    filter = value['filter']
+                    norm_type = value['norm_type']
+
+                    conv_1 = Conv2d(input=current,filter=filter//2,kernel=[1,1],strides=1,layer_name='conv_1')
+                    bn_1 = norm(conv_1,norm_type=norm_type,is_train=self.is_train,scope='batch_1')
+                    prelu_1 = PRelu(bn_1,"prelu_1")
+
+                    conv_2 = Conv2d(input=prelu_1, filter=filter // 2, kernel=[3, 3], strides=1,layer_name='conv_2')
+                    bn_2 = norm(conv_2, norm_type=norm_type, is_train=self.is_train, scope='batch_2')
+                    prelu_2 = PRelu(bn_2, "prelu_2")
+
+                    conv_3 = Conv2d(input=prelu_2, filter=filter // 2, kernel=[3, 3], strides=1,layer_name='conv_3')
+                    bn_3 = norm(conv_3, norm_type=norm_type, is_train=self.is_train, scope='batch_3')
+                    prelu_3 = PRelu(bn_3, "prelu_3")
+
+                    conv_4 = Conv2d(input=prelu_3, filter=filter, kernel=[1, 1], strides=1, layer_name='conv_4')
+                    bn_4 = norm(conv_4, norm_type=norm_type, is_train=self.is_train, scope='batch_4')
+                    prelu_4 = PRelu(bn_4, "prelu_4")
+
+                    current = current + prelu_4
+
                 self.net[name] = current
 
 
@@ -235,6 +265,12 @@ class LstmSegNet:
 
                 self.loss = 0.8 * tf.reduce_mean(self.softmax_cost * self.weight_map) + 0.2 * tf.reduce_mean(
                     self.dice_cost)  # 损失函数权
+
+
+            reg = tf.contrib.layers.apply_regularization(tf.contrib.layers.l2_regularizer(1e-4),
+                                                         tf.trainable_variables())
+
+            self.loss = self.loss + reg
 
             self.lr = tf.train.exponential_decay(self.learning_rate,
                                                  self.global_step,

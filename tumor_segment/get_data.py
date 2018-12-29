@@ -3,18 +3,22 @@ import os
 import numpy as np
 
 
-def read_data(path, file, rotate, down_sample=1, normalize='gaosi'):  # 获得整套CT数据和标签，并且转换成numpy格式
+def read_data(path, file, rotate, down_sample=1, normalize='max_min'):  # 获得整套CT数据和标签，并且转换成numpy格式
     image = sitk.ReadImage(os.path.join(path, file))
     print(file, image.GetSpacing())
     dicom_array = sitk.GetArrayFromImage(image)
+    dicom_array[dicom_array < -50] = -50
+    dicom_array[dicom_array > 150] = 150
     if normalize == 'gaosi':
         avg = np.mean(dicom_array)
         std = np.std(dicom_array)
         dicom_array = (dicom_array - avg) / std
-    else:
+    elif normalize == 'max_min':
         max = np.max(dicom_array)
         min = np.min(dicom_array)
         dicom_array = (dicom_array - min) / (max - min)
+    else:
+        pass
 
     label_array = np.zeros([dicom_array.shape[0], dicom_array.shape[1], dicom_array.shape[2], 2])
 
@@ -43,7 +47,8 @@ def read_data(path, file, rotate, down_sample=1, normalize='gaosi'):  # 获得�
     temp = temp > 0
     label_array[:, :, :, 1] = ~temp
 
-    return dicom_array[::down_sample,::down_sample,::down_sample], label_array[::down_sample,::down_sample,::down_sample]
+    return dicom_array[::down_sample, ::down_sample, ::down_sample], label_array[::down_sample, ::down_sample,
+                                                                     ::down_sample]
 
 
 def chop_datas(dicom_array, w_size, h_size, c_size, train):  # 将CT数据切割成设置固定大小的长方体

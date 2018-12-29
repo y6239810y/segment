@@ -13,11 +13,13 @@ def net_val(model, root, weights, times, down_sample):  # 执行评估步骤
     THRESHOLD = model.threshold
 
     file_list = [file for file in os.listdir(root) if
-                 int(re.sub("\D", "", file)) > 130 and int(re.sub("\D", "", file)) <= 170 and "volume" in file]
+                 int(re.sub("\D", "", file)) > 110 and int(re.sub("\D", "", file)) <= 130 and "volume" in file]
 
     for i, file in enumerate(file_list):
         data_array, label_array = read_data(root, file, 1, down_sample)
-
+        if np.sum(label_array[...,0])==0:
+            print(file, "has no tumor")
+            continue
         out_vtk_tumor = np.zeros(data_array.shape)
 
         indexs = chop_datas(data_array, W_SIZE, H_SIZE, C_SIZE, train=False)  # 获取到每个长方体的起始点的坐标索引
@@ -48,20 +50,20 @@ def net_val(model, root, weights, times, down_sample):  # 执行评估步骤
         label_array_obj = 1.0 * (label_array[:, :, :, 0] > THRESHOLD)
 
         # post process
-        pred_seg = measure.label(out_vtk_tumor, 4)
-        props = measure.regionprops(pred_seg)
+        # pred_seg = measure.label(out_vtk_tumor, 4)
+        # props = measure.regionprops(pred_seg)
+        #
+        # max_area = 0
+        # max_index = 0
+        # for index, prop in enumerate(props, start=1):
+        #     if prop.area > max_area:
+        #         max_area = prop.area
+        #         max_index = index
+        #
+        # pred_seg[pred_seg != max_index] = 0
+        # pred_seg[pred_seg == max_index] = 1
 
-        max_area = 0
-        max_index = 0
-        for index, prop in enumerate(props, start=1):
-            if prop.area > max_area:
-                max_area = prop.area
-                max_index = index
-
-        pred_seg[pred_seg != max_index] = 0
-        pred_seg[pred_seg == max_index] = 1
-
-        out_vtk_tumor = pred_seg.astype(np.uint8)
+        #out_vtk_tumor = out_vtk_tumor.astype(np.uint8)
 
         total_dice = np.sum(2.0 * out_vtk_tumor * label_array_obj) / (1.0 * np.sum(out_vtk_tumor + label_array_obj))
         total_iou = np.sum(1.0 * out_vtk_tumor * label_array_obj) / (
@@ -77,22 +79,22 @@ def net_val(model, root, weights, times, down_sample):  # 执行评估步骤
         )
         print("\n\n\n")
 
-        if os.path.exists(os.path.join(model.save_path, 'vtk')):
-            pass
-        else:
-            os.makedirs(os.path.join(model.save_path, 'vtk'))
-
-        origin_dicom = sitk.ReadImage(os.path.join(root, file))
-        seg_result = sitk.GetImageFromArray(out_vtk_tumor)
-
-        seg_result.SetDirection(origin_dicom.GetDirection())
-        seg_result.SetOrigin(origin_dicom.GetOrigin())
-        seg_result.SetSpacing(origin_dicom.GetSpacing())
-
-        sitk.WriteImage(seg_result, os.path.join(os.path.join(model.save_path, 'vtk'), file))
+        # if os.path.exists(os.path.join(model.save_path, 'vtk')):
+        #     pass
+        # else:
+        #     os.makedirs(os.path.join(model.save_path, 'vtk'))
+        #
+        # origin_dicom = sitk.ReadImage(os.path.join(root, file))
+        # seg_result = sitk.GetImageFromArray(out_vtk_tumor)
+        #
+        # seg_result.SetDirection(origin_dicom.GetDirection())
+        # seg_result.SetOrigin(origin_dicom.GetOrigin())
+        # seg_result.SetSpacing(origin_dicom.GetSpacing())
+        #
+        # sitk.WriteImage(seg_result, os.path.join(os.path.join(model.save_path, 'vtk'), file))
 
         avg_tumor.append(total_iou)
-
-        del out_vtk_tumor, pred_seg, seg_result, origin_dicom
+        del out_vtk_tumor
+        #del out_vtk_tumor, pred_seg, seg_result, origin_dicom
 
     return avg_tumor
